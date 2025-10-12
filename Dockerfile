@@ -61,9 +61,6 @@ WORKDIR /app
 # Copy binary
 COPY --from=builder /app/build/bin/porter /usr/local/bin/porter
 
-# Copy config if exists
-COPY config/ ./config/ 2>/dev/null || echo "No config directory found"
-
 # Create data directory
 RUN mkdir -p /app/data && chown -R porter:porter /app
 
