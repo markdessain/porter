@@ -1,0 +1,40 @@
+# Git files
+.git
+.gitignore
+
+# Build artifacts
+build/
+dist/
+
+# Development files
+.air.toml
+*.log
+
+# Documentation
+docs/
+README.md
+CONTRIBUTING.md
+LICENSE
+
+# Test files
+*_test.go
+test/
+bench/
+
+# CI/CD files (except Dockerfile)
+.github/
+!.github/workflows/docker.yml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
