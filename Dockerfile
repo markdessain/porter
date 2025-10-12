@@ -1,5 +1,5 @@
-# Build stage - using Debian instead of Alpine for better DuckDB compatibility
-FROM golang:1.24-bullseye AS builder
+# Build stage - using Debian Bookworm for DuckDB compatibility
+FROM golang:1.24-bookworm AS builder
 
 # Build arguments
 ARG VERSION=dev
@@ -9,16 +9,15 @@ ARG BUILD_DATE=unknown
 # Set working directory
 WORKDIR /app
 
-# Install build dependencies
+# Install essential build dependencies for DuckDB
 RUN apt-get update && apt-get install -y \
+    build-essential \
     git \
     make \
-    gcc \
-    g++ \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy go mod files
+# Copy go mod files first for better caching
 COPY go.mod go.sum ./
 
 # Download dependencies
@@ -27,48 +26,53 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application with version information
+# Set build environment
+ENV CGO_ENABLED=1
+ENV GOOS=linux
 ENV VERSION=${VERSION}
 ENV COMMIT_HASH=${COMMIT_HASH}
 ENV BUILD_DATE=${BUILD_DATE}
-ENV CGO_ENABLED=1
-RUN make build
 
-# Final stage - using Debian slim for glibc compatibility
-FROM debian:bullseye-slim
+# Build using go directly to avoid make complications
+RUN mkdir -p build/bin && \
+    go build \
+    -v \
+    -ldflags "-w -s \
+    -X 'github.com/TFMV/porter/cmd/server.version=${VERSION}' \
+    -X 'github.com/TFMV/porter/cmd/server.commit=${COMMIT_HASH}' \
+    -X 'github.com/TFMV/porter/cmd/server.buildDate=${BUILD_DATE}'" \
+    -o build/bin/porter \
+    ./cmd/server
 
-# Install runtime dependencies
+# Runtime stage
+FROM debian:bookworm-slim
+
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+# Create user
 RUN groupadd -g 1001 porter && \
-    useradd -u 1001 -g porter -s /bin/sh porter
+    useradd -u 1001 -g porter porter
 
-# Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
+# Copy binary
 COPY --from=builder /app/build/bin/porter /usr/local/bin/porter
 
-# Copy config files
-COPY --from=builder /app/config/ ./config/
+# Copy config if exists
+COPY config/ ./config/ 2>/dev/null || echo "No config directory found"
 
-# Change ownership
-RUN chown -R porter:porter /app
+# Create data directory
+RUN mkdir -p /app/data && chown -R porter:porter /app
 
-# Switch to non-root user
 USER porter
 
-# Expose ports
 EXPOSE 32010 9090
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD porter --help > /dev/null || exit 1
 
-# Set entrypoint
 ENTRYPOINT ["porter"]
 CMD ["serve"]
