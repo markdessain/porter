@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -22,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -240,6 +243,53 @@ func runServer(cmd *cobra.Command, args []string) error {
 		if err := grpcServer.Serve(listener); err != nil {
 			serverErrCh <- fmt.Errorf("server error: %w", err)
 		}
+	}()
+
+	go func() {
+		time.Sleep(time.Second * 1)
+		transport := grpc.WithTransportCredentials(insecure.NewCredentials())
+		opts := []grpc.DialOption{
+			transport,
+		}
+
+		// Create query client
+		client, err := flightsql.NewClient(cfg.Address, nil, nil, opts...)
+		if err != nil {
+			fmt.Println(fmt.Errorf("flightsql: %s", err))
+		}
+
+		query := `
+		INSTALL airport FROM community;
+		LOAD airport;
+		
+		INSTALL http_client FROM community;
+		LOAD http_client;
+		
+		SELECT COUNT(*) AS count FROM duckdb_extensions() WHERE installed = true AND extension_name IN ('airport', 'http_client');`
+
+		info, err := client.Execute(ctx, query)
+		if err != nil {
+			fmt.Println(fmt.Errorf("flightsql flight info: %s", err))
+		}
+		reader, err := client.DoGet(ctx, info.Endpoint[0].Ticket)
+		if err != nil {
+			fmt.Println(fmt.Errorf("flightsql do get: %s", err))
+		}
+
+		var counts []map[string]int
+		for reader.Next() {
+			record := reader.Record()
+			b, err := json.MarshalIndent(record, "", "  ")
+			if err != nil {
+				fmt.Println(err)
+			}
+			json.Unmarshal(b, &counts)
+		}
+
+		if len(counts) != 1 || counts[0]["count"] != 2 {
+			log.Fatalln("Unable to install extensions")
+		}
+
 	}()
 
 	// Wait for shutdown signal or server error
