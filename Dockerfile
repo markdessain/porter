@@ -63,6 +63,7 @@ COPY --from=builder /app/build/bin/porter /usr/local/bin/porter
 
 # Create data directory
 RUN mkdir -p /app/data && chown -R porter:porter /app
+RUN mkdir -p /home/porter
 
 USER porter
 
