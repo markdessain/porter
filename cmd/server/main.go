@@ -259,6 +259,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 
 		query := `
+		SET home_directory='/app';
+		
 		INSTALL airport FROM community;
 		LOAD airport;
 		
